@@ -33,6 +33,7 @@ _BUILD = """
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_jvm_external//private/rules:jvm_import.bzl", "jvm_import")
 load("@rules_jvm_external//private/rules:jetifier.bzl", "jetify_aar_import", "jetify_jvm_import")
+{rules_license_import_statement}
 {aar_import_statement}
 
 {imports}
@@ -238,6 +239,12 @@ def _get_aar_import_statement_or_empty_str(repository_ctx):
         # parse the label to validate it
         _ = Label(repository_ctx.attr.aar_import_bzl_label)
         return _AAR_IMPORT_STATEMENT % repository_ctx.attr.aar_import_bzl_label
+    else:
+        return ""
+
+def _get_rules_license_import_statement_or_empty_str(repository_ctx):
+    if repository_ctx.attr.license_json:
+        return "load(\"@rules_license//rules:license.bzl\", \"license\")"
     else:
         return ""
 
@@ -571,6 +578,18 @@ def _pinned_coursier_fetch_impl(repository_ctx):
         executable = False,
     )
 
+    license_info = {}
+    if repository_ctx.attr.license_json:
+        repository_ctx.symlink(
+            repository_ctx.path(repository_ctx.attr.license_json),
+            repository_ctx.path("imported_license_info.json"),
+        )
+        license_info = json.decode(
+            repository_ctx.read(
+                repository_ctx.path("imported_license_info.json"),
+            ),
+        )
+
     repository_ctx.report_progress("Generating BUILD targets..")
     (generated_imports, jar_versionless_target_labels) = parser.generate_imports(
         repository_ctx = repository_ctx,
@@ -591,6 +610,7 @@ def _pinned_coursier_fetch_impl(repository_ctx):
         },
         override_targets = repository_ctx.attr.override_targets,
         skip_maven_local_dependencies = False,
+        license_info = license_info,
     )
 
     repository_ctx.template(
@@ -607,6 +627,7 @@ def _pinned_coursier_fetch_impl(repository_ctx):
             repository_name = repository_ctx.name,
             imports = generated_imports,
             aar_import_statement = _get_aar_import_statement_or_empty_str(repository_ctx),
+            rules_license_import_statement = _get_rules_license_import_statement_or_empty_str(repository_ctx),
         ),
         executable = False,
     )
@@ -1126,6 +1147,18 @@ def _coursier_fetch_impl(repository_ctx):
         "__INPUT_ARTIFACTS_HASH": compute_dependency_inputs_signature(repository_ctx.attr.artifacts, repository_ctx.attr.repositories),
     })
 
+    license_info = {}
+    if repository_ctx.attr.license_json:
+        repository_ctx.symlink(
+            repository_ctx.path(repository_ctx.attr.license_json),
+            repository_ctx.path("imported_license_info.json"),
+        )
+        license_info = json.decode(
+            repository_ctx.read(
+                repository_ctx.path("imported_license_info.json"),
+            ),
+        )
+
     repository_ctx.report_progress("Generating BUILD targets..")
     (generated_imports, jar_versionless_target_labels) = parser.generate_imports(
         repository_ctx = repository_ctx,
@@ -1147,6 +1180,7 @@ def _coursier_fetch_impl(repository_ctx):
         override_targets = repository_ctx.attr.override_targets,
         # Skip maven local dependencies if generating the unpinned repository
         skip_maven_local_dependencies = repository_ctx.attr.name.startswith("unpinned_"),
+        license_info = license_info,
     )
 
     # This repository rule can be either in the pinned or unpinned state, depending on when
@@ -1168,6 +1202,7 @@ def _coursier_fetch_impl(repository_ctx):
             repository_name = repository_name,
             imports = generated_imports,
             aar_import_statement = _get_aar_import_statement_or_empty_str(repository_ctx),
+            rules_license_import_statement = _get_rules_license_import_statement_or_empty_str(repository_ctx),
         ),
         executable = False,
     )
@@ -1291,6 +1326,7 @@ pinned_coursier_fetch = repository_rule(
                 "none",
             ],
         ),
+        "license_json": attr.label(doc = "JSON representing rules_license necessary metadata for applying licenses to imported artifacts"),
     },
     implementation = _pinned_coursier_fetch_impl,
 )
@@ -1352,6 +1388,7 @@ coursier_fetch = repository_rule(
                 "none",
             ],
         ),
+        "license_json": attr.label(doc = "JSON representing rules_license necessary metadata for applying licenses to imported artifacts"),
     },
     environ = [
         "JAVA_HOME",
