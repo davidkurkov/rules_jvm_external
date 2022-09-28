@@ -60,7 +60,7 @@ def _deduplicate_list(items):
 # tree.
 #
 # Made function public for testing.
-def _generate_imports(repository_ctx, dependencies, explicit_artifacts, neverlink_artifacts, testonly_artifacts, override_targets, skip_maven_local_dependencies):
+def _generate_imports(repository_ctx, dependencies, explicit_artifacts, neverlink_artifacts, testonly_artifacts, override_targets, skip_maven_local_dependencies, license_info):
     # The list of java_import/aar_import declaration strings to be joined at the end
     all_imports = []
 
@@ -327,7 +327,33 @@ def _generate_imports(repository_ctx, dependencies, explicit_artifacts, neverlin
                 target_import_string.append("\tvisibility = [%s]," % (",".join(["\"%s\"" % v for v in default_visibilities])))
                 alias_visibility = "\tvisibility = [%s],\n" % (",".join(["\"%s\"" % v for v in default_visibilities]))
 
-            # 9. Finish the java_import rule.
+            # 9. Add applicable_licenses to artifact (license information taken from `license_json` passed to `maven_install`)
+            #
+            # java_import(
+            # 	name = "org_hamcrest_hamcrest_library",
+            # 	jars = ["https/repo1.maven.org/maven2/org/hamcrest/hamcrest-library/1.3/hamcrest-library-1.3.jar"],
+            # 	srcjar = "https/repo1.maven.org/maven2/org/hamcrest/hamcrest-library/1.3/hamcrest-library-1.3-sources.jar",
+            # 	deps = [
+            # 		":org_hamcrest_hamcrest_core",
+            # 	],
+            #   tags = [
+            #       "maven_coordinates=org.hamcrest:hamcrest.library:1.3"],
+            #       "maven_url=https://repo1.maven.org/maven/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
+            #   ],
+            #   neverlink = True,
+            #   testonly = True,
+            #   applicable_licenses = [
+            #       "LICENSE-org_hamcrest_hamcrest-library-BSD-3-Clause-Clear",
+            #   ],
+            target_import_string.append("\tapplicable_licenses = [")
+
+            if artifact["coordinates"] in license_info:
+                licenses = license_info[artifact["coordinates"]]
+                for license in licenses:
+                    target_import_string.append("\t\t\":%s\"," % (license["name"]))
+            target_import_string.append("\t],")
+
+            # 10. Finish the java_import rule.
             #
             # java_import(
             # 	name = "org_hamcrest_hamcrest_library",
@@ -347,7 +373,7 @@ def _generate_imports(repository_ctx, dependencies, explicit_artifacts, neverlin
 
             all_imports.append("\n".join(target_import_string))
 
-            # 10. Create a versionless alias target
+            # 11. Create a versionless alias target
             #
             # alias(
             #   name = "org_hamcrest_hamcrest_library_1_3",
@@ -357,7 +383,23 @@ def _generate_imports(repository_ctx, dependencies, explicit_artifacts, neverlin
             all_imports.append("alias(\n\tname = \"%s\",\n\tactual = \"%s\",\n%s)" %
                                (versioned_target_alias_label, target_label, alias_visibility))
 
-            # 11. If using maven_install.json, use a genrule to copy the file from the http_file
+            # 12. If there is a corresponding license for the artifact, create a license target.
+            # https://github.com/bazelbuild/rules_license/blob/main/rules/providers.bzl#L26
+            # license(
+            #   name = "LICENSE-org_hamcrest_hamcrest-BSD-3-Clause-Clear",
+            #   copyright_notice = "Copyright 2018",
+            #   license_kinds = [
+            #     "@rules_license//licenses/spdx:BSD-3-Clause-Clear",
+            #   ],
+            #   license_text = "@//compliance/licenses:LICENSE-SPDX-BSD-3-Clause-Clear.txt",
+            #   package_name = "Hamcrest"
+            # )
+            if artifact["coordinates"] in license_info:
+                for license in license_info[artifact["coordinates"]]:
+                    all_imports.append("license(\n\tname = \"%s\",\n\tcopyright_notice = \"%s\",\n\tlicense_kinds = %s,\n\tlicense_text = \"%s\",\n\tpackage_name = \"%s\",\n)" %
+                                        (license["name"], license["copyright_notice"], license["license_kinds"], license["license_text"], license["package_name"]))
+
+            # 13. If using maven_install.json, use a genrule to copy the file from the http_file
             # repository into this repository.
             #
             # genrule(
