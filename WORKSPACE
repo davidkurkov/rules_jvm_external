@@ -704,6 +704,12 @@ load("//migration:maven_jar_migrator_deps.bzl", "maven_jar_migrator_repositories
 
 maven_jar_migrator_repositories()
 
+http_archive(
+    name = "rules_license",
+    sha256 = "00ccc0df21312c127ac4b12880ab0f9a26c1cff99442dc6c5a331750360de3c3",
+    url = "https://github.com/bazelbuild/rules_license/releases/download/0.0.3/rules_license-0.0.3.tar.gz",
+)
+
 # Located at the end, because it's only used in tests
 
 http_archive(
